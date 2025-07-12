@@ -1,23 +1,34 @@
-import { useEffect } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { useEffect, useState } from 'react'
+import { StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import HueLogo from '../components/HueLogo'
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 
 export default function SplashScreen() {
   const router = useRouter()
+  const [visible, setVisible] = useState(true)
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      router.replace('/day')
+      setVisible(false)
+      setTimeout(() => {
+        router.replace('/day')
+      }, 500)
     }, 2000)
 
     return () => clearTimeout(timer)
   }, [])
 
+  if (!visible) return null
+
   return (
-    <View style={styles.container}>
+    <Animated.View
+      entering={FadeIn.duration(600)}
+      exiting={FadeOut.duration(500)}
+      style={styles.container}
+    >
       <HueLogo />
-    </View>
+    </Animated.View>
   )
 }
 
@@ -27,5 +38,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  text: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 12,
   },
 })
