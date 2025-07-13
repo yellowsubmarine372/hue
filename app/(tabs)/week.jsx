@@ -50,6 +50,11 @@ export default function WeekScreen() {
   const [dragIndex, setDragIndex] = useState(-1)
   const barRef = useRef(null)
   const barLayout = useRef({ x: 0, y: 0, width: 0, height: 0 })
+  
+  // 더블클릭 감지를 위한 상태
+  const [lastTouchTime, setLastTouchTime] = useState(0)
+  const [lastTouchIndex, setLastTouchIndex] = useState(-1)
+  const DOUBLE_CLICK_DELAY = 300 // 300ms 이내 두 번 터치
 
   // 전체 색깔 조합 변경
   const changeAllColors = () => {
@@ -108,6 +113,59 @@ export default function WeekScreen() {
     return -1
   }
 
+  // 경계 더블클릭으로 사각형 합치기
+  const mergeSegments = (boundaryIndex) => {
+    // 최소 2개 사각형이 있을 때만 합치기 가능
+    if (segments.length <= 1) return
+    
+    setSegments(prev => {
+      const newSegments = [...prev]
+      const leftIndex = boundaryIndex
+      const rightIndex = boundaryIndex + 1
+      
+      // 기존 색깔들과 중복되지 않는 새로운 색깔 생성
+      const existingColors = new Set(newSegments.map(s => s.color))
+      let newColor
+      do {
+        newColor = getRandomColor()
+      } while (existingColors.has(newColor))
+      
+      // 두 사각형의 너비를 합치고 새로운 색깔 적용
+      const mergedWidth = newSegments[leftIndex].width + newSegments[rightIndex].width
+      newSegments[leftIndex] = {
+        ...newSegments[leftIndex],
+        width: mergedWidth,
+        color: newColor
+      }
+      
+      // 오른쪽 사각형 제거
+      newSegments.splice(rightIndex, 1)
+      
+      return newSegments
+    })
+  }
+
+  // 경계 터치 처리 (더블클릭 감지)
+  const handleBoundaryTouch = (touchEvent) => {
+    const boundaryIndex = findBoundaryIndex(touchEvent)
+    if (boundaryIndex === -1) return
+    
+    const currentTime = Date.now()
+    const timeDiff = currentTime - lastTouchTime
+    
+    // 더블클릭 감지: 같은 경계를 300ms 이내에 두 번 터치
+    if (timeDiff < DOUBLE_CLICK_DELAY && boundaryIndex === lastTouchIndex) {
+      mergeSegments(boundaryIndex)
+      // 더블클릭 후 상태 초기화
+      setLastTouchTime(0)
+      setLastTouchIndex(-1)
+    } else {
+      // 첫 번째 터치 또는 다른 경계 터치
+      setLastTouchTime(currentTime)
+      setLastTouchIndex(boundaryIndex)
+    }
+  }
+
   const splitSegment = (index, touchEvent) => {
     if (segments.length >= 7) return
     
@@ -160,7 +218,6 @@ export default function WeekScreen() {
     const deltaX = gestureState.dx
     const deltaPercent = (deltaX / barWidth) * 100
     
-    
     setSegments(prev => {
       const newSegments = [...prev]
       const leftIndex = dragIndex
@@ -185,26 +242,39 @@ export default function WeekScreen() {
   }
 
   const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: (evt, gestureState) => {
+      const boundaryIndex = findBoundaryIndex(evt.nativeEvent)
+      return boundaryIndex !== -1
+    },
+    
     onMoveShouldSetPanResponder: (evt, gestureState) => {
       const boundaryIndex = findBoundaryIndex(evt.nativeEvent)
-      return boundaryIndex !== -1 && Math.abs(gestureState.dx) > 2
+      return boundaryIndex !== -1 && Math.abs(gestureState.dx) > 8
     },
     
     onPanResponderGrant: (evt, gestureState) => {
       const boundaryIndex = findBoundaryIndex(evt.nativeEvent)
       if (boundaryIndex !== -1) {
         setDragIndex(boundaryIndex)
-        setIsDragging(true)
+        // 처음에는 드래그 상태가 아님
+        setIsDragging(false)
+        
+        // 경계 터치 처리 (더블클릭 감지)
+        handleBoundaryTouch(evt.nativeEvent)
       }
     },
     
     onPanResponderMove: (evt, gestureState) => {
-      if (isDragging && dragIndex !== -1) {
+      if (dragIndex !== -1 && Math.abs(gestureState.dx) > 8) {
+        // 실제로 드래그가 시작되면 드래그 상태로 변경
+        if (!isDragging) {
+          setIsDragging(true)
+        }
         handleBoundaryDrag(gestureState)
       }
     },
     
-    onPanResponderRelease: () => {
+    onPanResponderRelease: (evt, gestureState) => {
       setIsDragging(false)
       setDragIndex(-1)
     }
