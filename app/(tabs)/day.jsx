@@ -1,60 +1,81 @@
-import { View, Text, StyleSheet } from 'react-native'
-import { useState, useEffect } from 'react'
-import DayPaper from '../../components/DayPaper'
+// DayScreen.jsx
+import { View, Text, StyleSheet, Dimensions } from 'react-native'
+import { Canvas } from '@react-three/fiber/native'
+import { GestureDetector, Gesture } from 'react-native-gesture-handler'
+import { useEffect, useState } from 'react'
+import DayPaper3D from '../../components/DayPaper3d'
+import { useSharedValue, runOnJS } from 'react-native-reanimated'
 
-function getComplementaryColor(hex) {
-  const r = 255 - parseInt(hex.slice(1, 3), 16)
-  const g = 255 - parseInt(hex.slice(3, 5), 16)
-  const b = 255 - parseInt(hex.slice(5, 7), 16)
-  return `rgb(${r}, ${g}, ${b})`
-}
+const { width } = Dimensions.get('window')
 
 export default function DayScreen() {
-  const [isAfternoon, setIsAfternoon] = useState(false)
-  const [currentTime, setCurrentTime] = useState(new Date())
-
-  const baseColor = '#89CFF0'
-  const complementaryColor = getComplementaryColor(baseColor)
+  const [currentTime, setCurrentTime] = useState(() => new Date())
+  const rotationShared = useSharedValue(0)
 
   useEffect(() => {
-    const now = new Date()
-    setCurrentTime(now)
-    setIsAfternoon(now.getHours() >= 12)
+    const timer = setInterval(() => {
+      const now = new Date()
+      setCurrentTime(now)
+
+      const h  = now.getHours()
+      const m  = now.getMinutes()
+      const s  = now.getSeconds()
+      const tot = h * 60 + m + s / 60
+      rotationShared.value = (tot / 1440) * 360 - 180
+    }, 1000)
+
+    return () => clearInterval(timer)
   }, [])
 
-  const toggleTime = () => {
-    setIsAfternoon(prev => !prev)
-    const newTime = new Date(currentTime)
-    newTime.setHours(isAfternoon ? 9 : 15)
-    setCurrentTime(newTime)
+  const updateTimeFromTimestamp = (timestamp) => {
+    const newDate = new Date(timestamp)
+    setCurrentTime(newDate)
   }
 
+  let base = 0
+  const pan = Gesture.Pan()
+    .onStart(() => { base = rotationShared.value })
+    .onUpdate(e => {
+      const delta = (e.translationX / width) * 360
+      const normalized = ((base + delta + 180) % 360) - 180
+      rotationShared.value = normalized
+
+      const minsTot = ((normalized + 180) / 360) * 1440
+      let h = Math.floor(minsTot / 60)
+      let m = Math.floor(minsTot % 60)
+
+      // 유효성 검사
+      if (isNaN(h) || h < 0 || h > 23) h = 0
+      if (isNaN(m) || m < 0 || m > 59) m = 0
+
+      const newDate = new Date()
+      newDate.setHours(h, m, 0, 0)
+      
+      if (!isNaN(newDate.getTime())) {
+        runOnJS(updateTimeFromTimestamp)(newDate.getTime())
+      }
+    })
+
   return (
-    <View style={styles.container}>
-      <DayPaper
-        isAfternoon={isAfternoon}
-        onFlip={toggleTime}
-        frontColor={baseColor}
-        backColor={complementaryColor}
-      />
-      <Text style={styles.timeText}>
-        {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
-    </View>
+    <GestureDetector gesture={pan}>
+      <View style={styles.container}>
+        <Canvas style={styles.canvas}>
+          <ambientLight />
+          <directionalLight position={[0, 5, 5]} />
+          <DayPaper3D rotationShared={rotationShared} />
+        </Canvas>
+
+        <Text style={styles.time}>
+          {String(currentTime.getHours()).padStart(2,'0')}:
+          {String(currentTime.getMinutes()).padStart(2,'0')}
+        </Text>
+      </View>
+    </GestureDetector>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  timeText: {
-    marginTop: 24,
-    fontSize: 20,
-    color: '#333',
-    fontFamily: 'System',
-  },
+  container:{ flex:1, backgroundColor:'#fff'},
+  canvas:{ width:'100%', height:400},
+  time:{ marginTop:24, marginBottom:32, textAlign:'center', fontSize:32, fontWeight:'bold'}
 })
